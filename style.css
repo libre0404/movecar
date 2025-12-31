@@ -1,0 +1,50 @@
+/* 基础变量 */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --primary: #0093E9;
+  --secondary: #80D0C7;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  background: linear-gradient(160deg, var(--primary) 0%, var(--secondary) 100%);
+  min-height: 100vh;
+  padding: clamp(16px, 4vw, 24px);
+  padding-top: calc(clamp(16px, 4vw, 24px) + var(--sat));
+  display: flex; justify-content: center; align-items: flex-start;
+}
+
+/* 磨砂玻璃卡片效果 */
+.card {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 10px 40px rgba(0, 147, 233, 0.2);
+  width: 100%; max-width: 480px;
+}
+
+.icon-wrap {
+  width: 80px; height: 80px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  border-radius: 24px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 20px;
+  font-size: 40px;
+  box-shadow: 0 10px 20px rgba(0, 147, 233, 0.3);
+}
+
+.btn-main {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  color: white; border: none; padding: 18px;
+  border-radius: 18px; font-size: 18px; font-weight: 700;
+  width: 100%; cursor: pointer; transition: transform 0.2s;
+}
+
+.btn-main:active { transform: scale(0.97); }
+
+/* 更多样式建议从你原有的 HTML <style> 块中复制过来... */
