@@ -10,7 +10,8 @@
     {
       "src": "https://cdn-icons-png.flaticon.com/512/741/741407.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
