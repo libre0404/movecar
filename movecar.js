@@ -7,20 +7,35 @@ const CONFIG = {
   TOKEN_TTL: 600       
 }
 
+async function checkRateLimit(ip) {
+  const limitKey = `limit:${ip}`;
+  const current = await MOVE_CAR_STATUS.get(limitKey);
+  const count = current ? parseInt(current) : 0;
+  if (count >= 5) return false; 
+  await MOVE_CAR_STATUS.put(limitKey, (count + 1).toString(), { expirationTtl: 3600 });
+  return true;
+}
+
 async function handleRequest(request) {
-  const url = new URL(request.url)
-  const path = url.pathname
-  const method = request.method
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const method = request.method;
   const userAgent = request.headers.get("user-agent") || "";
+  const ip = request.headers.get("cf-connecting-ip");
 
-  // 1. 基础安全防护：过滤空 UA
-  if (!userAgent || userAgent.length < 10) return new Response("Bot detected", { status: 403 });
+  // 1. 基础安全过滤 (反爬)
+  const botPattern = /bot|spider|crawler|python|go-http-client|axios|curl/i;
+  if (!userAgent || userAgent.length < 20 || botPattern.test(userAgent)) {
+    return new Response("Forbidden", { status: 403 });
+  }
 
-  // 获取环境变量
   const SEC_PATH = typeof SECRET_PATH !== 'undefined' ? SECRET_PATH : 'notify';
 
-  // 2. 路由控制
+  // 2. 路由分发
   if (path === `/api/${SEC_PATH}` && method === 'POST') {
+    // 接口校验
+    if (request.headers.get("X-Requested-With") !== "XMLHttpRequest") return new Response("Invalid Request", { status: 403 });
+    if (!(await checkRateLimit(ip))) return new Response("Too many requests", { status: 429 });
     return handleNotify(request, url);
   }
 
@@ -42,15 +57,14 @@ async function handleRequest(request) {
   if (path === '/api/check-status') return handleCheckStatus();
 
   return renderMainPage(url.origin, SEC_PATH);
-}
+} // <--- 这里之前漏掉了闭合括号
 
-// --- 核心逻辑：通知与确认 ---
+// --- 核心逻辑 ---
 
 async function handleNotify(request, url) {
   try {
     const body = await request.json();
     const nonce = Math.random().toString(36).substring(2, 15);
-    // 存储一次性安全 Token
     await MOVE_CAR_STATUS.put('current_nonce', nonce, { expirationTtl: CONFIG.TOKEN_TTL });
 
     const confirmUrl = encodeURIComponent(`${url.origin}/owner-confirm?t=${nonce}`);
@@ -131,7 +145,7 @@ async function handleOwnerConfirmAction(request) {
   return new Response(JSON.stringify({ success: true }));
 }
 
-// --- 渲染部分 (全功能 UI 恢复) ---
+// --- UI 部分 ---
 
 function renderMainPage(origin, secPath) {
   const phone = typeof PHONE_NUMBER !== 'undefined' ? PHONE_NUMBER : '';
@@ -157,7 +171,8 @@ function renderMainPage(origin, secPath) {
       .loc-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
       .loc-icon.loading { background: #fff3cd; animation: pulse 1.5s infinite; }
       .loc-icon.success { background: #d4edda; }
-      .btn-main { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border: none; padding: 18px; border-radius: 18px; font-size: 18px; font-weight: 700; cursor: pointer; box-shadow: 0 10px 20px rgba(0,147,233,0.3); }
+      .btn-main { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border: none; padding: 18px; border-radius: 18px; font-size: 18px; font-weight: 700; cursor: pointer; box-shadow: 0 10px 20px rgba(0,147,233,0.3); width: 100%; }
+      .btn-main:disabled { filter: grayscale(1); cursor: not-allowed; opacity: 0.7; }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
   </head>
@@ -174,6 +189,7 @@ function renderMainPage(origin, secPath) {
       <div class="card header"><div class="icon-wrap">🚗</div><h1>呼叫车主挪车</h1><p>Notify Car Owner</p></div>
       <div class="card input-card">
         <textarea id="msgInput" placeholder="留言给车主..."></textarea>
+        <div style="display:none;"><input type="text" id="hp" tabindex="-1"></div>
         <div class="tags">
           <span class="tag" onclick="document.getElementById('msgInput').value='挡住路了'">🚧 挡路</span>
           <span class="tag" onclick="document.getElementById('msgInput').value='联系不上您'">📞 没接</span>
@@ -192,18 +208,21 @@ function renderMainPage(origin, secPath) {
     </div>
     <script>
       let userLocation = null;
+      let loadTime = Date.now();
       function requestLocation() {
         navigator.geolocation.getCurrentPosition(p => {
           userLocation = { lat: p.coords.latitude, lng: p.coords.longitude };
           document.getElementById('locIcon').className = 'loc-icon success';
           document.getElementById('locStatus').innerText = '已获取位置 ✓';
-        }, null, { timeout: 10000 });
+        }, () => { document.getElementById('locStatus').innerText = '定位未开启'; }, { timeout: 10000 });
       }
       async function sendNotify() {
+        if (Date.now() - loadTime < 2000 || document.getElementById('hp').value) return;
         const btn = document.getElementById('notifyBtn');
         btn.disabled = true; btn.innerText = "🚀 发送中...";
         const res = await fetch("/api/${secPath}", {
           method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
           body: JSON.stringify({ message: document.getElementById('msgInput').value, location: userLocation, delayed: !userLocation })
         });
         if (res.ok) {
@@ -214,7 +233,7 @@ function renderMainPage(origin, secPath) {
              const data = await sRes.json();
              if (data.status === 'confirmed') document.getElementById('statusTxt').innerHTML = "<b style='color:#22c55e'>🎉 车主已确认，正在赶来！</b>";
           }, 3000);
-        }
+        } else { btn.disabled = false; btn.innerText = "🔔 重试发送"; }
       }
     </script>
   </body></html>`, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
