@@ -1,50 +1,89 @@
-/* 基础变量 */
+/* 全局变量与基础设置 */
 :root {
   --sat: env(safe-area-inset-top, 0px);
-  --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
-  --sal: env(safe-area-inset-left, 0px);
   --primary: #0093E9;
   --secondary: #80D0C7;
+  --success: #28a745;
+  --error: #dc3545;
+  --warning: #f59e0b;
+  --text-main: #1a202c;
+  --text-sub: #718096;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   background: linear-gradient(160deg, var(--primary) 0%, var(--secondary) 100%);
   min-height: 100vh;
   padding: clamp(16px, 4vw, 24px);
-  padding-top: calc(clamp(16px, 4vw, 24px) + var(--sat));
+  padding-top: calc(16px + var(--sat));
+  padding-bottom: calc(16px + var(--sab));
   display: flex; justify-content: center; align-items: flex-start;
 }
 
-/* 磨砂玻璃卡片效果 */
+/* 容器与卡片 */
+.container { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 16px; }
+
 .card {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 24px;
   padding: 24px;
-  box-shadow: 0 10px 40px rgba(0, 147, 233, 0.2);
-  width: 100%; max-width: 480px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
 }
 
+/* 头部图标 */
 .icon-wrap {
   width: 80px; height: 80px;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
   border-radius: 24px;
   display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 20px;
-  font-size: 40px;
+  margin: 0 auto 16px; font-size: 44px;
+  box-shadow: 0 8px 20px rgba(0, 147, 233, 0.3);
+}
+
+.header h1 { font-size: 24px; color: var(--text-main); text-align: center; margin-bottom: 4px; }
+.header p { font-size: 14px; color: var(--text-sub); text-align: center; }
+
+/* 输入框与标签 */
+.input-card textarea {
+  width: 100%; min-height: 100px; border: none; outline: none;
+  font-size: 16px; color: var(--text-main); resize: none; background: transparent;
+}
+
+.tags { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.tags::-webkit-scrollbar { display: none; }
+.tag {
+  background: #f1f5f9; color: var(--text-sub); padding: 8px 12px;
+  border-radius: 12px; font-size: 13px; white-space: nowrap; cursor: pointer;
+}
+
+/* 定位状态栏 */
+.loc-card { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.loc-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.loc-icon.loading { background: #fff3cd; animation: pulse 1.5s infinite; }
+.loc-icon.success { background: #d4edda; }
+.loc-title { font-size: 16px; font-weight: 600; color: var(--text-main); }
+.loc-status { font-size: 13px; color: var(--text-sub); }
+
+/* 按钮 */
+.btn-main {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white; border: none; padding: 18px; border-radius: 18px;
+  font-size: 18px; font-weight: 700; cursor: pointer; width: 100%;
   box-shadow: 0 10px 20px rgba(0, 147, 233, 0.3);
 }
+.btn-main:disabled { background: #cbd5e1; box-shadow: none; cursor: not-allowed; }
 
-.btn-main {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-  color: white; border: none; padding: 18px;
-  border-radius: 18px; font-size: 18px; font-weight: 700;
-  width: 100%; cursor: pointer; transition: transform 0.2s;
+/* 地图按钮（车主页使用） */
+.map-links { display: flex; gap: 10px; margin-top: 15px; }
+.map-btn {
+  flex: 1; padding: 12px; border-radius: 12px; text-decoration: none;
+  text-align: center; font-weight: 600; font-size: 14px; color: white;
 }
+.map-btn.amap { background: #1890ff; }
+.map-btn.apple { background: #1d1d1f; }
 
-.btn-main:active { transform: scale(0.97); }
-
-/* 更多样式建议从你原有的 HTML <style> 块中复制过来... */
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
