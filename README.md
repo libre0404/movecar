@@ -89,5 +89,3 @@
 本项目基于 **[MIT License](https://opensource.org/licenses/MIT)** 开源。
 
 ---
-
-**Would you like me to help you generate a background image prompt for your QR code or package the `movecar.js` file for you?**
