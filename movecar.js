@@ -1,10 +1,12 @@
+// 完整集成代码
 addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request))
 })
 
 const CONFIG = { 
   KV_TTL: 3600,        
-  TOKEN_TTL: 600       
+  TOKEN_TTL: 600,
+  WAIT_TIME: 300 // 5分钟等待时间（秒）
 }
 
 async function checkRateLimit(ip) {
@@ -23,7 +25,13 @@ async function handleRequest(request) {
   const userAgent = request.headers.get("user-agent") || "";
   const ip = request.headers.get("cf-connecting-ip");
 
-  // 1. 基础安全过滤 (反爬)
+											   
+  const country = request.cf?.country;
+  if (country && country !== 'CN') {
+    return new Response('Access Denied (Only CN)', { status: 403 });
+  }
+
+								   
   const botPattern = /bot|spider|crawler|python|go-http-client|axios|curl/i;
   if (!userAgent || userAgent.length < 20 || botPattern.test(userAgent)) {
     return new Response("Forbidden", { status: 403 });
@@ -31,9 +39,8 @@ async function handleRequest(request) {
 
   const SEC_PATH = typeof SECRET_PATH !== 'undefined' ? SECRET_PATH : 'notify';
 
-  // 2. 路由分发
+					
   if (path === `/api/${SEC_PATH}` && method === 'POST') {
-    // 接口校验
     if (request.headers.get("X-Requested-With") !== "XMLHttpRequest") return new Response("Invalid Request", { status: 403 });
     if (!(await checkRateLimit(ip))) return new Response("Too many requests", { status: 429 });
     return handleNotify(request, url);
@@ -57,7 +64,7 @@ async function handleRequest(request) {
   if (path === '/api/check-status') return handleCheckStatus();
 
   return renderMainPage(url.origin, SEC_PATH);
-} // <--- 这里之前漏掉了闭合括号
+}
 
 // --- 核心逻辑 ---
 
@@ -65,7 +72,10 @@ async function handleNotify(request, url) {
   try {
     const body = await request.json();
     const nonce = Math.random().toString(36).substring(2, 15);
+    const startTime = Date.now();
+    
     await MOVE_CAR_STATUS.put('current_nonce', nonce, { expirationTtl: CONFIG.TOKEN_TTL });
+    await MOVE_CAR_STATUS.put('notify_start_time', startTime.toString(), { expirationTtl: CONFIG.TOKEN_TTL });
 
     const confirmUrl = encodeURIComponent(`${url.origin}/owner-confirm?t=${nonce}`);
     let notifyBody = '🚗 挪车请求';
@@ -80,19 +90,42 @@ async function handleNotify(request, url) {
     await MOVE_CAR_STATUS.put('notify_status', 'waiting', { expirationTtl: 600 });
     
     if (body.delayed) {
-      await new Promise(resolve => setTimeout(resolve, 30000));
+      await new Promise(resolve => setTimeout(resolve, 5000)); // 适当减短Worker内部阻塞
     }
 
     const barkApiUrl = `${BARK_URL}/${encodeURIComponent('挪车提醒')}/${encodeURIComponent(notifyBody)}?group=MoveCar&level=critical&sound=minuet&url=${confirmUrl}`;
     await fetch(barkApiUrl); 
 
-    return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ success: true, startTime }), { headers: { 'Content-Type': 'application/json' } });
   } catch (e) {
     return new Response(JSON.stringify({ success: false }), { status: 500 });
   }
 }
 
-// 坐标转换算法 (WGS-84 转 GCJ-02)
+async function handleCheckStatus() {
+  const status = await MOVE_CAR_STATUS.get('notify_status');
+  const startTimeStr = await MOVE_CAR_STATUS.get('notify_start_time');
+  const ownerLocation = await MOVE_CAR_STATUS.get('owner_location');
+  
+  const startTime = startTimeStr ? parseInt(startTimeStr) : Date.now();
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const remaining = Math.max(0, CONFIG.WAIT_TIME - elapsed);
+  
+  let phone = null;
+  // 如果车主确认了，或者时间到了，才返回电话
+  if (status === 'confirmed' || remaining === 0) {
+    phone = typeof PHONE_NUMBER !== 'undefined' ? PHONE_NUMBER : '';
+  }
+
+  return new Response(JSON.stringify({ 
+    status: status || 'waiting', 
+    remaining, 
+    phone,
+    ownerLocation: ownerLocation ? JSON.parse(ownerLocation) : null 
+  }), { headers: { 'Content-Type': 'application/json' } });
+}
+
+// 坐标转换算法... (此处省略，保持原样)
 function wgs84ToGcj02(lat, lng) {
   const a = 6378245.0; const ee = 0.00669342162296594323;
   if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) return { lat, lng };
@@ -129,11 +162,11 @@ async function handleGetLocation() {
   return new Response(data || JSON.stringify({}), { headers: { 'Content-Type': 'application/json' } });
 }
 
-async function handleCheckStatus() {
-  const status = await MOVE_CAR_STATUS.get('notify_status');
-  const ownerLocation = await MOVE_CAR_STATUS.get('owner_location');
-  return new Response(JSON.stringify({ status: status || 'waiting', ownerLocation: ownerLocation ? JSON.parse(ownerLocation) : null }), { headers: { 'Content-Type': 'application/json' } });
-}
+									
+															
+																	
+																																															 
+ 
 
 async function handleOwnerConfirmAction(request) {
   const body = await request.json();
@@ -148,7 +181,7 @@ async function handleOwnerConfirmAction(request) {
 // --- UI 部分 ---
 
 function renderMainPage(origin, secPath) {
-  const phone = typeof PHONE_NUMBER !== 'undefined' ? PHONE_NUMBER : '';
+																		
   return new Response(`
   <!DOCTYPE html>
   <html lang="zh-CN">
@@ -173,6 +206,8 @@ function renderMainPage(origin, secPath) {
       .loc-icon.success { background: #d4edda; }
       .btn-main { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border: none; padding: 18px; border-radius: 18px; font-size: 18px; font-weight: 700; cursor: pointer; box-shadow: 0 10px 20px rgba(0,147,233,0.3); width: 100%; }
       .btn-main:disabled { filter: grayscale(1); cursor: not-allowed; opacity: 0.7; }
+      .btn-call { background: #ef4444; margin-top: 10px; display: none; text-decoration: none; text-align: center; }
+      .timer-hint { font-size: 13px; color: #666; margin-top: 10px; text-align: center; }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
   </head>
@@ -181,7 +216,7 @@ function renderMainPage(origin, secPath) {
       <div style="background:white;padding:32px;border-radius:24px;max-width:320px;text-align:center;">
         <div style="font-size:48px;margin-bottom:16px;">📍</div>
         <h2 style="margin-bottom:8px;">位置信息说明</h2>
-        <p style="font-size:14px;color:#666;margin-bottom:24px;">分享位置让车主确认您在车旁<br>不分享将延迟30秒发送通知</p>
+        <p style="font-size:14px;color:#666;margin-bottom:24px;">分享位置让车主确认您在车旁<br>不分享将稍微延迟发送通知</p>
         <button onclick="document.getElementById('locationTipModal').style.display='none';requestLocation()" style="width:100%;padding:14px;background:var(--primary);color:white;border:none;border-radius:12px;font-weight:600;">我知道了</button>
       </div>
     </div>
@@ -192,7 +227,7 @@ function renderMainPage(origin, secPath) {
         <div style="display:none;"><input type="text" id="hp" tabindex="-1"></div>
         <div class="tags">
           <span class="tag" onclick="document.getElementById('msgInput').value='挡住路了'">🚧 挡路</span>
-          <span class="tag" onclick="document.getElementById('msgInput').value='联系不上您'">📞 没接</span>
+          <span class="tag" onclick="document.getElementById('msgInput').value='挪车'">🚗 挪车</span>
           <span class="tag" onclick="document.getElementById('msgInput').value='急需出门'">🙏 加急</span>
         </div>
       </div>
@@ -203,8 +238,13 @@ function renderMainPage(origin, secPath) {
       <button id="notifyBtn" class="btn-main" onclick="sendNotify()">🔔 一键通知车主</button>
     </div>
     <div class="container" id="successView" style="display:none">
-      <div class="card" style="text-align:center;"><div class="icon-wrap" style="background:#f0fdf4;color:#22c55e;">✅</div><h2>通知已发出</h2><p id="statusTxt" style="margin-top:8px;">等待车主回应...</p></div>
-      <a href="tel:${phone}" class="btn-main" style="text-align:center;text-decoration:none;background:#ef4444;">📞 直接打电话</a>
+      <div class="card" style="text-align:center;">
+        <div class="icon-wrap" style="background:#f0fdf4;color:#22c55e;">✅</div>
+        <h2>通知已发出</h2>
+        <p id="statusTxt" style="margin-top:8px;">等待车主回应...</p>
+        <div id="timerContainer" class="timer-hint">正在计算安全等待时间...</div>
+      </div>
+      <a id="callBtn" href="#" class="btn-main btn-call">📞 直接打电话</a>
     </div>
     <script>
       let userLocation = null;
@@ -228,12 +268,37 @@ function renderMainPage(origin, secPath) {
         if (res.ok) {
           document.getElementById('mainView').style.display = 'none';
           document.getElementById('successView').style.display = 'block';
-          setInterval(async () => {
-             const sRes = await fetch('/api/check-status');
-             const data = await sRes.json();
-             if (data.status === 'confirmed') document.getElementById('statusTxt').innerHTML = "<b style='color:#22c55e'>🎉 车主已确认，正在赶来！</b>";
-          }, 3000);
+          startStatusCheck();
+														   
+											
+																																									 
+				   
         } else { btn.disabled = false; btn.innerText = "🔔 重试发送"; }
+      }
+
+      function startStatusCheck() {
+        const check = async () => {
+          const sRes = await fetch('/api/check-status');
+          const data = await sRes.json();
+          const callBtn = document.getElementById('callBtn');
+          const timerDiv = document.getElementById('timerContainer');
+
+          if (data.status === 'confirmed') {
+            document.getElementById('statusTxt').innerHTML = "<b style='color:#22c55e'>🎉 车主已确认，正在赶来！</b>";
+          }
+          
+          if (data.phone) {
+            callBtn.href = 'tel:' + data.phone;
+            callBtn.style.display = 'block';
+            timerDiv.style.display = 'none';
+          } else {
+            const m = Math.floor(data.remaining / 60);
+            const s = data.remaining % 60;
+            timerDiv.innerText = "紧急情况？电话功能将在 " + m + "分" + s + "秒 后开启";
+          }
+        };
+        check();
+        setInterval(check, 3000);
       }
     </script>
   </body></html>`, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
